@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Purchase Data - Nutribray</title>
+  <style>
+    :root{font-family:Inter, Roboto, Arial, sans-serif}
+    body{margin:0;padding:20px;background:#f6f8fa;color:#111}
+    header{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+    h1{font-size:20px;margin:0}
+    .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+    .tab{background:#fff;border:1px solid #ddd;padding:8px 12px;border-radius:8px;cursor:pointer}
+    .tab.active{box-shadow:0 4px 12px rgba(0,0,0,.06);border-color:#bbb}
+    .container{background:#fff;padding:14px;border-radius:8px;border:1px solid #e2e6ea}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{border:1px solid #e6e9ec;padding:8px;text-align:left;font-size:13px}
+    th{background:#fafbfc}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+    button{padding:8px 12px;border-radius:8px;border:0;background:#0b76ef;color:#fff;cursor:pointer}
+    button.secondary{background:#6c757d}
+    input[type=text], input[type=date], input[type=number]{padding:6px;border:1px solid #cfd6dc;border-radius:6px}
+    .row-actions{display:flex;gap:6px}
+    .note{margin-top:10px;font-size:13px;color:#444}
+    footer{margin-top:14px;font-size:13px;color:#666}
+    @media (max-width:700px){th,td{font-size:12px}}
+  </style>
+</head>
+<body>
+  <header>
+    <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'><rect rx='8' ry='8' width='40' height='40' fill='%230b76ef'/><text x='50%' y='55%' font-size='18' text-anchor='middle' fill='white' font-family='Arial' dy='.3em'>N</text></svg>" alt="logo">
+    <div>
+      <h1>Purchase Data — Nutribray</h1>
+      <div style="color:#666;font-size:13px">Multiple sheets: Purchase Request, Vendor List, Purchase Orders, Material Inward, Payment Tracker, Summary Report</div>
+    </div>
+  </header>
+
+  <div class="tabs" id="tabs"></div>
+  <div class="container" id="content"></div>
+
+  <div style="margin-top:12px" class="controls">
+    <button id="addRowBtn">Add new row</button>
+    <button id="exportExcel">Export to Excel (Multi-sheet)</button>
+    <button id="clearTable" class="secondary">Clear current table</button>
+    <button id="downloadHtml" class="secondary">Download this HTML</button>
+  </div>
+  <div class="note">Tip: Fill rows then click <strong>Export to Excel</strong> to download a multi-sheet .xlsx file. You can also save this page as an HTML file to reuse.</div>
+
+  <footer>Created for Kamlesh Rao • Modify columns/labels as needed</footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <script>
+    // Sheet definitions (columns & sample row)
+    const sheets = [
+      { key: 'purchase_request', title: 'Purchase Request', cols: ['Request Person','Department','Plant','Item','Quantity','UOM','Required Date','Remarks'], sample: [1,'Production','Carton Boxes',500,'2025-08-25','Urgent'] },
+      { key: 'vendor_list', title: 'Vendor List', cols: ['Sr. No.','Vendor Name','Material Supply','Contact Person','Mobile No.','Email ID','GST No.','Address','Remarks'], sample: [1,'ABC Traders','Cartons, Packaging Box','Mr. Rajesh','9876543210','abc@gmail.com','22AAAAA1234A1Z5','Delhi','Regular'] },
+      { key: 'purchase_orders', title: 'Purchase Orders', cols: ['PO No.','Date','Vendor Name','Item','Quantity','Rate','Value'], sample: ['PO001','2025-08-18','ABC Traders','Carton Boxes',500,10,5000] },
+      { key: 'material_inward', title: 'Material Inward', cols: ['GRN No.','PO Ref','Received Qty','Pending Qty','Date'], sample: ['GRN001','PO001',480,20,'2025-08-20'] },
+      { key: 'payment_tracker', title: 'Payment Tracker', cols: ['Vendor Name','Invoice No.','Invoice Date','Amount','Payment Due','Status'], sample: ['ABC Traders','INV001','2025-08-20',5000,'2025-09-05','Pending'] },
+      { key: 'summary_report', title: 'Summary Report', cols: ['Month','Total Purchase Value','Top Vendor','Top Item'], sample: ['August-2025',10000,'ABC Traders','Carton Boxes'] }
+    ];
+
+    const tabsEl = document.getElementById('tabs');
+    const contentEl = document.getElementById('content');
+    let currentIndex = 0;
+
+    function createTabs(){
+      sheets.forEach((s,i)=>{
+        const btn = document.createElement('div');
+        btn.className = 'tab' + (i===0? ' active':'');
+        btn.textContent = s.title;
+        btn.onclick = ()=>{selectTab(i)};
+        tabsEl.appendChild(btn);
+      });
+    }
+
+    function selectTab(i){
+      currentIndex = i;
+      Array.from(tabsEl.children).forEach((c,idx)=> c.classList.toggle('active', idx===i));
+      renderTable(sheets[i]);
+    }
+
+    function renderTable(sheet){
+      contentEl.innerHTML = '';
+      const title = document.createElement('h3');
+      title.textContent = sheet.title;
+      contentEl.appendChild(title);
+
+      const table = document.createElement('table');
+      table.id = 'table-'+sheet.key;
+      const thead = document.createElement('thead');
+      const thr = document.createElement('tr');
+      sheet.cols.forEach(c=>{ const th=document.createElement('th'); th.textContent=c; thr.appendChild(th); });
+      const thActions = document.createElement('th'); thActions.textContent='Actions'; thr.appendChild(thActions);
+      thead.appendChild(thr); table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      // load from localStorage if present
+      const saved = localStorage.getItem('sheet_'+sheet.key);
+      let rows = saved ? JSON.parse(saved) : [sheet.sample.slice()];
+
+      rows.forEach(r=> tbody.appendChild(rowToTr(r, sheet)));
+      table.appendChild(tbody);
+      contentEl.appendChild(table);
+    }
+
+    function rowToTr(rowArr, sheet){
+      const tr = document.createElement('tr');
+      sheet.cols.forEach((c,idx)=>{
+        const td = document.createElement('td');
+        const input = document.createElement('input');
+        input.type = (c.toLowerCase().includes('date')) ? 'date' : (c.toLowerCase().includes('qty')||c.toLowerCase().includes('quantity')||c.toLowerCase().includes('amount')||c.toLowerCase().includes('value') ? 'number' : 'text');
+        input.value = rowArr[idx] !== undefined ? rowArr[idx] : '';
+        input.onchange = ()=>saveCurrentSheet();
+        input.style.width = '100%';
+        input.style.border = 'none';
+        input.style.background = 'transparent';
+        td.appendChild(input);
+        tr.appendChild(td);
+      });
+      const tdAct = document.createElement('td');
+      tdAct.className = 'row-actions';
+      const del = document.createElement('button'); del.textContent='Delete'; del.onclick=()=>{ tr.remove(); saveCurrentSheet(); };
+      del.style.background='#e63946'; del.style.padding='6px 8px'; del.style.borderRadius='6px';
+      tdAct.appendChild(del);
+      tr.appendChild(tdAct);
+      return tr;
+    }
+
+    function saveCurrentSheet(){
+      const sheet = sheets[currentIndex];
+      const table = document.getElementById('table-'+sheet.key);
+      if(!table) return;
+      const data = [];
+      const rows = table.querySelectorAll('tbody tr');
+      rows.forEach(r=>{
+        const rowVals = [];
+        Array.from(r.querySelectorAll('td')).slice(0, sheet.cols.length).forEach(td=>{
+          const v = td.querySelector('input') ? td.querySelector('input').value : td.textContent;
+          rowVals.push(v);
+        });
+        // only save if not empty
+        const any = rowVals.some(x=>x!=='' && x!==null && x!==undefined);
+        if(any) data.push(rowVals);
+      });
+      localStorage.setItem('sheet_'+sheet.key, JSON.stringify(data));
+    }
+
+    document.getElementById('addRowBtn').addEventListener('click', ()=>{
+      const sheet = sheets[currentIndex];
+      const table = document.getElementById('table-'+sheet.key);
+      if(!table) return;
+      const tbody = table.querySelector('tbody');
+      const empty = sheet.cols.map(c=>'');
+      tbody.appendChild(rowToTr(empty, sheet));
+      saveCurrentSheet();
+    });
+
+    document.getElementById('clearTable').addEventListener('click', ()=>{
+      if(!confirm('Clear all rows in this sheet?')) return;
+      const sheet = sheets[currentIndex];
+      localStorage.removeItem('sheet_'+sheet.key);
+      renderTable(sheet);
+    });
+
+    document.getElementById('exportExcel').addEventListener('click', ()=>{
+      const wb = XLSX.utils.book_new();
+      sheets.forEach(sheet=>{
+        const table = document.getElementById('table-'+sheet.key);
+        let data = [];
+        if(table){
+          const rows = table.querySelectorAll('tbody tr');
+          rows.forEach(r=>{
+            const rowVals = [];
+            Array.from(r.querySelectorAll('td')).slice(0, sheet.cols.length).forEach(td=>{
+              const v = td.querySelector('input') ? td.querySelector('input').value : td.textContent;
+              rowVals.push(v);
+            });
+            const any = rowVals.some(x=>x!=='' && x!==null && x!==undefined);
+            if(any) data.push(rowVals);
+          });
+        }
+        // if no table/data, try to load from localStorage or use header only
+        if(data.length === 0){
+          const saved = localStorage.getItem('sheet_'+sheet.key);
+          data = saved ? JSON.parse(saved) : [];
+        }
+        // Prepend header
+        const wsData = [sheet.cols, ...data];
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        XLSX.utils.book_append_sheet(wb, ws, sheet.title.substring(0,31)); // sheet name limit
+      });
+      XLSX.writeFile(wb, 'Purchase_Manager_Nutribray.xlsx');
+    });
+
+    document.getElementById('downloadHtml').addEventListener('click', ()=>{
+      const blob = new Blob([document.documentElement.outerHTML], {type: 'text/html'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'Purchase_Manager_Nutribray.html';
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    });
+
+    // Save current sheet on page unload
+    window.addEventListener('beforeunload', saveCurrentSheet);
+
+    // Initial render
+    createTabs();
+    selectTab(0);
+  </script>
+</body>
+</html>
